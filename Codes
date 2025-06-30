@@ -1,0 +1,91 @@
+# Simulating data
+set.seed(123)
+m <- 10
+n_j <- sample(10:50, m, replace = TRUE)
+mu <- 50
+tau2 <- 25
+sigma2 <- 20
+theta_j <- rnorm(m, mu, sqrt(tau2))
+y <- lapply(1:m, function(j) rnorm(n_j[j], theta_j[j], sqrt(sigma2)))
+
+# Gibbs sampler function
+gibbs_sampler <- function(y, n_iter = 10000, burn_in = 2000) {
+m <- length(y)
+n_j <- sapply(y, length)
+mu <- mean(unlist(y))
+tau2 <- var(unlist(y))
+sigma2 <- var(unlist(y))
+theta_j <- sapply(y, mean)
+samples <- list(mu = numeric(n_iter), tau2 = numeric(n_iter), sigma2 = numeric(n_iter), theta_j = matrix(NA, n_iter, m))
+  
+for (iter in 1:n_iter) {
+# Update mu
+  post_mu_mean <- (sum(theta_j) / tau2 + mu / 0.1) / (m / tau2 + 1 / 0.1)
+    post_mu_var <- 1 / (m / tau2 + 1 / 0.1)
+    mu <- rnorm(1, post_mu_mean, sqrt(post_mu_var))
+    
+  # Update tau2
+    post_tau2_shape <- (m + 2) / 2
+    post_tau2_rate <- (sum((theta_j - mu)^2) + 0.2) / 2
+    tau2 <- 1 / rgamma(1, post_tau2_shape, post_tau2_rate)
+    
+ # Update theta_j
+    for (j in 1:m) {
+      post_theta_mean <- (n_j[j] * mean(y[[j]]) / sigma2 + mu / tau2) / (n_j[j] / sigma2 + 1 / tau2)
+      post_theta_var <- 1 / (n_j[j] / sigma2 + 1 / tau2)
+      theta_j[j] <- rnorm(1, post_theta_mean, sqrt(post_theta_var))
+    }
+    
+# Update sigma2
+post_sigma2_shape <- (sum(n_j) + 2) / 2
+post_sigma2_rate <- (sum(sapply(1:m, function(j) sum((y[[j]] - theta_j[j])^2))) + 0.2) / 2
+    sigma2 <- 1 / rgamma(1, post_sigma2_shape, post_sigma2_rate)
+    
+    samples$mu[iter] <- mu
+    samples$tau2[iter] <- tau2
+    samples$sigma2[iter] <- sigma2
+    samples$theta_j[iter, ] <- theta_j
+  }
+  
+list(mu = samples$mu[-(1:burn_in)], tau2 = samples$tau2[-(1:burn_in)], sigma2 = samples$sigma2[-(1:burn_in)], theta_j = samples$theta_j[-(1:burn_in), ])
+}
+
+# Running the Gibbs sampler
+samples <- gibbs_sampler(y)
+
+# Posterior summaries
+posterior_summary <- function(samples) {
+  c(mean = mean(samples), sd = sd(samples), quantile(samples, probs = c(0.025, 0.975)))
+}
+
+# Summarize posterior samples
+mu_summary <- posterior_summary(samples$mu)
+tau2_summary <- posterior_summary(samples$tau2)
+sigma2_summary <- posterior_summary(samples$sigma2)
+
+mu_summary
+tau2_summary
+sigma2_summary
+
+
+# Trace plots
+par(mfrow=c(3,1))
+plot(samples$mu, type='l', main='Trace Plot for μ', xlab='Iteration', ylab='μ')
+plot(samples$tau2, type='l', main='Trace Plot for τ²', xlab='Iteration', ylab='τ²')
+plot(samples$sigma2, type='l', main='Trace Plot for σ²', xlab='Iteration', ylab='σ²')
+
+# Density plots
+par(mfrow=c(3,1))
+plot(density(samples$mu), main='Density Plot for μ', xlab='μ', ylab='Density')
+plot(density(samples$tau2), main='Density Plot for τ²', xlab='τ²', ylab='Density')
+plot(density(samples$sigma2), main='Density Plot for σ²', xlab='σ²', ylab='Density')
+
+
+# Autocorrelation plots
+par(mfrow=c(3,1))
+acf(samples$mu, main='Autocorrelation Plot for μ', lag.max=50)
+acf(samples$tau2, main='Autocorrelation Plot for τ²', lag.max=50)
+acf(samples$sigma2, main='Autocorrelation Plot for σ²', lag.max=50)
+
+
+
